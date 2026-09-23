@@ -95,12 +95,7 @@ are all converted in one pass.
 
 ## Installing
 
-This isn't on the community plugin store. To install manually:
-
-1. Copy `main.js`, `manifest.json`, and (if present) `styles.css` into
-   `<your vault>/.obsidian/plugins/zotero-annotation-to-pandoc/`.
-2. Reload Obsidian (or use the "Reload app without saving" command) and
-   enable the plugin under Settings → Community plugins.
+Install from the Obsidian app > Settings > Community Plugins.
 
 ## Building from source
 
