@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Read version from manifest.json
+        id: manifest
+        run: echo "version=$(jq -r .version manifest.json)" >> "$GITHUB_OUTPUT"
+
+      # Cryptographically ties main.js to this exact commit/workflow run, so
+      # anyone can verify it was built from this repository's source rather
+      # than tampered with after the fact.
+      # https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: main.js
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.manifest.outputs.version }}
+          files: |
+            main.js
+            manifest.json
