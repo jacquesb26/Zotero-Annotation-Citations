@@ -420,7 +420,6 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: "group",
-				heading: "General",
 				items: [
 					{
 						name: "Convert automatically",
@@ -508,8 +507,6 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		new Setting(containerEl).setName("General").setHeading();
 
 		new Setting(containerEl)
 			.setName("Convert automatically")
