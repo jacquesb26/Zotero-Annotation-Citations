@@ -274,21 +274,30 @@ export default class ZoteroAnnotationCitationsPlugin extends Plugin {
 		if (this.settings.source === "betterbibtex") {
 			return new BetterBibTexResolver(this.settings.bbtPort);
 		}
-		return new BibFileResolver(async () => {
-			const path = this.settings.bibFilePath;
-			if (!path) {
-				throw new Error(
-					"No .bib file path is set. Add one in the plugin settings."
-				);
-			}
-			try {
-				return await fs.readFile(path, "utf8");
-			} catch (e) {
-				throw new Error(
-					`Could not read bib file at "${path}": ${(e as Error).message}`
-				);
-			}
-		});
+		return new BibFileResolver(() => this.readBibFile());
+	}
+
+	/**
+	 * Reads the configured .bib file from disk. Pulled out into its own
+	 * explicitly-typed method (rather than an inline arrow passed to
+	 * BibFileResolver) so `fs.readFile`'s resolved type is pinned to
+	 * `string` rather than being inferred loosely at the call site.
+	 */
+	private async readBibFile(): Promise<string> {
+		const path = this.settings.bibFilePath;
+		if (!path) {
+			throw new Error(
+				"No .bib file path is set. Add one in the plugin settings."
+			);
+		}
+		try {
+			const contents: string = await fs.readFile(path, "utf8");
+			return contents;
+		} catch (e) {
+			throw new Error(
+				`Could not read bib file at "${path}": ${(e as Error).message}`
+			);
+		}
 	}
 
 	private async runOnSelection(editor: Editor) {
@@ -411,7 +420,7 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: "group",
-				heading: "Zotero Annotation Citations",
+				heading: "General",
 				items: [
 					{
 						name: "Convert automatically",
@@ -500,7 +509,7 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName("Zotero Annotation Citations").setHeading();
+		new Setting(containerEl).setName("General").setHeading();
 
 		new Setting(containerEl)
 			.setName("Convert automatically")
