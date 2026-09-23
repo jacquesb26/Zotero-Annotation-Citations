@@ -1,6 +1,6 @@
 {
   "name": "zotero-annotation-to-pandoc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zotero Annotation Citations: converts Zotero drag-and-drop annotation links into Pandoc citations linked to the annotation.",
   "main": "main.js",
   "scripts": {
