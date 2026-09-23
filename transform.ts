@@ -322,9 +322,11 @@ export async function convertZoteroCitations(
 	let converted = 0;
 	let unresolved = 0;
 
-	const output = text.replace(CLUSTER_RE, (whole, selectPart, pdfPart) => {
-		const selectRefs = parseSelectRefs(selectPart);
-		const pdfRefs = parsePdfRefs(pdfPart);
+	const output = text.replace(
+		CLUSTER_RE,
+		(_whole: string, selectPart: string, pdfPart: string) => {
+			const selectRefs = parseSelectRefs(selectPart);
+			const pdfRefs = parsePdfRefs(pdfPart);
 		// NOTE: pdf refs can't be matched to select refs by item key - the
 		// open-pdf link's item key is the PDF *attachment*, a different item
 		// from the parent that the select link points at. Zotero always
@@ -366,8 +368,9 @@ export async function convertZoteroCitations(
 			converted++;
 		}
 
-		return parts.join("; ");
-	});
+			return parts.join("; ");
+		}
+	);
 
 	return { output, converted, unresolved };
 }

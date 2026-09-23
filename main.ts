@@ -2,11 +2,11 @@ import {
 	App,
 	Editor,
 	EditorPosition,
-	MarkdownView,
 	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	SettingDefinitionItem,
 	requestUrl,
 } from "obsidian";
 import { promises as fs } from "fs";
@@ -18,6 +18,15 @@ import {
 	stripAnnotationLinks,
 	CLUSTER_RE,
 } from "./transform";
+
+/**
+ * Minimal shape of the CodeMirror 6 EditorView that Obsidian's Editor
+ * wraps at `.cm`. Only the bit we actually use is typed; the real
+ * EditorView has far more surface than this.
+ */
+interface EditorViewLike {
+	posAtCoords(coords: { x: number; y: number }): number | null;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Settings                                                          */
@@ -46,6 +55,11 @@ const DEFAULT_SETTINGS: ZoteroAnnotationSettings = {
 /* ------------------------------------------------------------------ */
 /*  Resolver: live Zotero via Better BibTeX JSON-RPC                  */
 /* ------------------------------------------------------------------ */
+
+interface BetterBibTexJsonRpcResponse {
+	result?: Record<string, string>;
+	error?: { code?: number; message?: string };
+}
 
 class BetterBibTexResolver implements CitekeyResolver {
 	private map = new Map<string, string>(); // "libPath:itemKey" -> citekey
@@ -79,7 +93,7 @@ class BetterBibTexResolver implements CitekeyResolver {
 			params: [params],
 		};
 
-		let json: any;
+		let json: BetterBibTexJsonRpcResponse;
 		try {
 			const res = await requestUrl({
 				url: `http://127.0.0.1:${this.port}/better-bibtex/json-rpc`,
@@ -97,8 +111,8 @@ class BetterBibTexResolver implements CitekeyResolver {
 				body: JSON.stringify(body),
 				throw: false,
 			});
-			json = res.json;
-		} catch (e) {
+			json = res.json as BetterBibTexJsonRpcResponse;
+		} catch {
 			throw new Error(
 				"Could not reach Zotero / Better BibTeX on port " +
 					this.port +
@@ -106,13 +120,13 @@ class BetterBibTexResolver implements CitekeyResolver {
 			);
 		}
 
-		if (json?.error) {
+		if (json.error) {
 			throw new Error(
 				"Better BibTeX returned an error: " + JSON.stringify(json.error)
 			);
 		}
 
-		const result = json?.result as Record<string, string> | undefined;
+		const result = json.result;
 		if (!result) return;
 
 		// item.citationkey returns { "[libraryID]:[itemKey]": "citekey" },
@@ -147,8 +161,7 @@ export default class ZoteroAnnotationCitationsPlugin extends Plugin {
 		this.addCommand({
 			id: "convert-file",
 			name: "Convert Zotero annotation links to Pandoc citations (whole note)",
-			editorCallback: (editor: Editor, view: MarkdownView) =>
-				this.runOnWholeFile(editor),
+			editorCallback: (editor: Editor) => this.runOnWholeFile(editor),
 		});
 
 		this.addCommand({
@@ -198,7 +211,7 @@ export default class ZoteroAnnotationCitationsPlugin extends Plugin {
 
 		const dropPos = dragEvt ? this.getDropPosition(editor, dragEvt) : null;
 
-		this.convertAndInsert(text, editor, dropPos);
+		void this.convertAndInsert(text, editor, dropPos);
 	}
 
 	private getDropPosition(editor: Editor, evt: DragEvent): EditorPosition | null {
@@ -206,11 +219,9 @@ export default class ZoteroAnnotationCitationsPlugin extends Plugin {
 			// Obsidian's Editor wraps a CodeMirror 6 EditorView at `.cm`.
 			// This is undocumented but stable across recent Obsidian versions,
 			// and is how other community plugins locate a drop precisely.
-			const cm = (editor as any).cm;
-			if (cm?.posAtCoords) {
-				const offset = cm.posAtCoords({ x: evt.clientX, y: evt.clientY });
-				if (typeof offset === "number") return editor.offsetToPos(offset);
-			}
+			const cm = (editor as unknown as { cm?: EditorViewLike }).cm;
+			const offset = cm?.posAtCoords({ x: evt.clientX, y: evt.clientY });
+			if (typeof offset === "number") return editor.offsetToPos(offset);
 		} catch {
 			/* fall through to cursor position below */
 		}
@@ -365,7 +376,8 @@ export default class ZoteroAnnotationCitationsPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const saved = (await this.loadData()) as Partial<ZoteroAnnotationSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
 	}
 
 	async saveSettings() {
@@ -385,11 +397,110 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	/**
+	 * Declarative mirror of display() below, used by Obsidian 1.13.0+ to
+	 * index these settings in the in-app settings search and to render the
+	 * tab without the imperative rebuild-on-every-change dance. display()
+	 * is kept as a fallback for the Obsidian versions this plugin still
+	 * supports (down to minAppVersion) that predate this API - see its
+	 * @deprecated note.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		const settings = this.plugin.settings;
+
+		return [
+			{
+				type: "group",
+				heading: "Zotero Annotation Citations",
+				items: [
+					{
+						name: "Convert automatically",
+						desc: "Convert Zotero citations the moment you paste or drag them in, instead of running a command afterwards. Anything that isn't a Zotero citation is left completely alone. The two commands below still work for converting text already in a note.",
+						control: {
+							type: "toggle",
+							key: "autoConvert",
+							defaultValue: DEFAULT_SETTINGS.autoConvert,
+						},
+					},
+					{
+						name: "Citekey source",
+						desc: "Better BibTeX (live) queries Zotero directly and is exact. A .bib file works offline but matches citekeys by author surname + year, so it can occasionally be ambiguous.",
+						control: {
+							type: "dropdown",
+							key: "source",
+							defaultValue: DEFAULT_SETTINGS.source,
+							options: {
+								betterbibtex: "Better BibTeX (live Zotero)",
+								bibfile: "Local .bib file",
+							},
+						},
+					},
+					{
+						name: "Better BibTeX port",
+						desc: "The local port Better BibTeX's JSON-RPC API listens on (Zotero must be running). Default is 23119.",
+						visible: () => settings.source === "betterbibtex",
+						control: {
+							type: "number",
+							key: "bbtPort",
+							defaultValue: DEFAULT_SETTINGS.bbtPort,
+							min: 1,
+							max: 65535,
+							step: 1,
+						},
+					},
+					{
+						name: ".bib file path",
+						desc:
+							"Absolute path to your Better BibTeX-exported .bib file, e.g. " +
+							'"/Users/you/Zotero/library.bib" or "C:\\Users\\you\\Zotero\\library.bib".',
+						visible: () => settings.source === "bibfile",
+						control: {
+							type: "text",
+							key: "bibFilePath",
+							defaultValue: DEFAULT_SETTINGS.bibFilePath,
+							placeholder: "/Users/you/Zotero/library.bib",
+						},
+					},
+					{
+						name: "Link target",
+						desc: '"PDF annotation" links straight to the highlighted annotation when one is present (falls back to the item otherwise). "Item only" always links to the Zotero item.',
+						control: {
+							type: "dropdown",
+							key: "linkTarget",
+							defaultValue: DEFAULT_SETTINGS.linkTarget,
+							options: {
+								pdf: "PDF annotation (recommended)",
+								select: "Item only",
+							},
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Usage",
+				items: [
+					{
+						name: "Convert a dragged-in annotation",
+						desc:
+							"Drag an annotation from Zotero into a note as usual, then run “Convert Zotero annotation links to Pandoc citations” (selection or whole note) from the command palette. " +
+							"([Author, 2020, p. 5](zotero://select/...)) ([pdf](zotero://open-pdf/...)) becomes [@author2020, p. 5](zotero://open-pdf/...) - Cmd/Ctrl-click still opens the exact highlight in Zotero, and Pandoc/CSL renders the citation normally.",
+					},
+					{
+						name: "Export a note",
+						desc:
+							"When a note is ready to export, run “Remove annotation links from Pandoc citations” to strip the zotero:// link back out, turning [@author2020, p. 5](zotero://...) into a plain [@author2020, p. 5] citation.",
+					},
+				],
+			},
+		];
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Zotero Annotation Citations" });
+		new Setting(containerEl).setName("Zotero Annotation Citations").setHeading();
 
 		new Setting(containerEl)
 			.setName("Convert automatically")
@@ -471,7 +582,7 @@ class ZoteroAnnotationSettingTab extends PluginSettingTab {
 					})
 			);
 
-		containerEl.createEl("h3", { text: "Usage" });
+		new Setting(containerEl).setName("Usage").setHeading();
 		const p = containerEl.createEl("p");
 		p.setText(
 			"Drag an annotation from Zotero into a note as usual, then run “Convert Zotero annotation links to Pandoc citations” (selection or whole note) from the command palette. " +
