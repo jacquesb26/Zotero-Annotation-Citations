@@ -4,7 +4,7 @@
   "version": "1.0.3",
   "minAppVersion": "1.4.16",
   "description": "Converts Zotero drag-and-drop annotation links into Pandoc-style citations that still link through to the specific PDF annotation.",
-  "author": "[YOUR NAME HERE]",
+  "author": "jacquesb26",
   "authorUrl": "",
   "isDesktopOnly": true
 }
