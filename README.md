@@ -113,6 +113,9 @@ sources.
 
 ## Troubleshooting
 
+**Drag-and-dropped annotations do not include a citation, only copy + pasted annotations**
+- Restart Zotero 
+
 **"Could not reach Zotero / Better BibTeX" even though Zotero is running.**
 
 - Confirm Better BibTeX is actually installed and enabled (Zotero → Tools
